@@ -71,21 +71,6 @@ class SagaServiceTest : JUnit5Minutests {
           metadata = EventMetadata(sequence = 0, originatingVersion = 0)
         })
       }
-
-      test("a matching event handler applies the event") {}
-      test("a duplicate event is ignored") {}
-      test("an event applied out-of-order is ignored") {}
-      test("a required event is applied") {}
-      test("an non-required event is applied") {}
-      test("errors cause a general compensation event to be emitted") {}
-    }
-
-    context("finishing a saga") {
-      test("calls the finalize method of a handler") {}
-    }
-
-    context("compensating for an error") {
-      test("calls the compensate method of a handler") {}
     }
   }
 

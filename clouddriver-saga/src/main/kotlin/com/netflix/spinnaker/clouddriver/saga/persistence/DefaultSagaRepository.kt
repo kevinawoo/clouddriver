@@ -68,7 +68,6 @@ class DefaultSagaRepository(
   }
 
   override fun save(saga: Saga, additionalEvents: List<SagaEvent>?) {
-    // TODO(rz): The saga should just record internal events that have occurred (SagaSequenceUpdated, SagaCompleted, etc) then save those
     val events: MutableList<SagaEvent> = mutableListOf(SagaSaved(saga))
     events.addAll(saga.getPendingEvents())
     if (additionalEvents != null) {

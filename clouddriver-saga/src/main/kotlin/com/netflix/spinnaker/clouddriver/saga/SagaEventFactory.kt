@@ -22,7 +22,13 @@ import com.netflix.spinnaker.clouddriver.saga.models.Saga
 import org.slf4j.LoggerFactory
 import org.springframework.core.ResolvableType
 
-// TODO(rz): Remove eventRepository in favor of [saga.getEvents()]
+/**
+ * Responsible for building up [CompositeSagaEvent]s when required by [SagaEventHandler]s.
+ *
+ * If there are multiple events of the same type in an event log, the latest event will be used.
+ *
+ * TODO(rz): Remove eventRepository in favor of [saga.getEvents()]
+ */
 class SagaEventFactory(
   private val eventRepository: EventRepository
 ) {

@@ -18,11 +18,9 @@ package com.netflix.spinnaker.clouddriver.saga
 import com.google.common.annotations.Beta
 import com.netflix.spectator.api.Registry
 import com.netflix.spinnaker.clouddriver.event.EventListener
+import com.netflix.spinnaker.clouddriver.event.EventPublisher
 import com.netflix.spinnaker.clouddriver.event.SpinEvent
 import com.netflix.spinnaker.clouddriver.event.persistence.EventRepository
-import com.netflix.spinnaker.clouddriver.saga.SagaService.EventApplyState.APPLIED
-import com.netflix.spinnaker.clouddriver.saga.SagaService.EventApplyState.NO_HANDLER
-import com.netflix.spinnaker.clouddriver.saga.SagaService.EventApplyState.OUT_OF_ORDER
 import com.netflix.spinnaker.clouddriver.saga.exceptions.InvalidSagaCompletionHandlerException
 import com.netflix.spinnaker.clouddriver.saga.exceptions.SagaSystemException
 import com.netflix.spinnaker.clouddriver.saga.models.Saga
@@ -68,8 +66,6 @@ import org.springframework.context.ApplicationContextAware
  * sagaService.save(saga)
  * sagaService.apply(saga.name, saga.id, AwsDeployCreated(description, priorOutputs)
  * ```
- *
- * TODO(rz): Metrics
  */
 @Beta
 class SagaService(
@@ -86,11 +82,8 @@ class SagaService(
   private lateinit var applicationContext: ApplicationContext
 
   private val eventsId = registry.createId("saga.events")
-  private val appliedEventsId = registry.createId("saga.events.applied")
-  private val failedEventsId = registry.createId("saga.events.failed")
 
   override fun onEvent(event: SpinEvent) {
-    // TODO(rz): `apply` would only occur via Commands; this method could disappear
     if (event is SagaEvent) {
       when (event) {
         is SagaLogAppended,
@@ -115,7 +108,6 @@ class SagaService(
 
   /**
    * TODO(rz): Add compensation handling
-   * TODO(rz): Wrap whole apply in try/catch; if exception bubbles, probably set saga to complete and fail
    */
   fun apply(event: SagaEvent) {
     requireSynthesizedEventMetadata(event)
@@ -128,14 +120,14 @@ class SagaService(
 
     if (isEventOutOfOrder(saga, event)) {
       log.warn("Received out-of-order event for saga '${saga.name}/${saga.id}', ignoring: ${event.javaClass.simpleName}")
-      registry.counter(eventsId.withTags(STATE_LABEL, OUT_OF_ORDER.name, TYPE_LABEL, event.javaClass.simpleName)).increment()
+      registry.counter(eventsId.withTags(STATE_LABEL, ApplyState.OUT_OF_ORDER.name, TYPE_LABEL, event.javaClass.simpleName)).increment()
       return
     }
 
     val handlers = eventHandlerProvider.getMatching(saga, event)
     val emittedEvents: List<SagaEvent> = if (handlers.isEmpty()) {
       log.debug("No EventHandlers found for event: ${event.javaClass.simpleName}")
-      registry.counter(eventsId.withTags(STATE_LABEL, NO_HANDLER.name, TYPE_LABEL, event.javaClass.simpleName)).increment()
+      registry.counter(eventsId.withTags(STATE_LABEL, ApplyState.NO_HANDLER.name, TYPE_LABEL, event.javaClass.simpleName)).increment()
       listOf()
     } else {
       handlers
@@ -147,6 +139,7 @@ class SagaService(
             handler.apply(handlerEvent, saga)
           } catch (e: Exception) {
             log.error("Failed applying event ${event.javaClass.simpleName} by handler '${handler.javaClass.simpleName}'", e)
+            registry.counter(eventsId.withTags(STATE_LABEL, ApplyState.FAILED.name, TYPE_LABEL, event.javaClass.simpleName)).increment()
 
             if (e is SpinnakerException && e.retryable == true) {
               saga.addEvent(SagaEventHandlerErrorOccurred(
@@ -163,7 +156,7 @@ class SagaService(
           }
         }
     }
-    registry.counter(eventsId.withTags(STATE_LABEL, APPLIED.name, TYPE_LABEL, event.javaClass.simpleName)).increment()
+    registry.counter(eventsId.withTags(STATE_LABEL, ApplyState.APPLIED.name, TYPE_LABEL, event.javaClass.simpleName)).increment()
 
     saga.setSequence(event.metadata.sequence)
 
@@ -178,11 +171,9 @@ class SagaService(
    * An out-of-order event is typically not an indication of an actual bug, but that another event that was
    * dispatched from the same originating version was applied first.
    *
-   * TODO(rz): This logic _probably_ needs to be re-evaluated. Maybe re-drive the event instead with the latest state?
-   * Perhaps instead we just don't update the sequence? Not really sure...
+   * TODO(rz): Looking to refactor Sagas to be strictly sequential in events; this would be easier to implement.
    */
   private fun isEventOutOfOrder(saga: Saga, event: SagaEvent): Boolean = false
-//    saga.getSequence() + 1 != event.metadata.sequence
 
   /**
    * Checks the history of applied events (including the [applyingEvent]) to see if all required events have been
@@ -233,7 +224,8 @@ class SagaService(
    * Get a Saga. An exception will be thrown if the Saga cannot be found.
    */
   fun get(sagaName: String, sagaId: String): Saga {
-    return sagaRepository.get(sagaName, sagaId) ?: throw SagaSystemException("Saga must be saved before applying")
+    return sagaRepository.get(sagaName, sagaId)
+      ?: throw SagaSystemException("Saga must be saved before applying: $sagaName/$sagaId")
   }
 
   fun save(saga: Saga, onlyIfMissing: Boolean = false) {
@@ -247,16 +239,25 @@ class SagaService(
     sagaRepository.save(saga)
   }
 
-  fun <T> awaitCompletion(saga: Saga): T? {
-    // TODO(rz): This obviously doesn't "await" anything; it's a placeholder for when the event publisher is async.
-    return get(saga.name, saga.id).let { completedSaga ->
-      @Suppress("UNCHECKED_CAST")
-      getCompletionHandler(completedSaga)?.apply(completedSaga) as T
-    }
-  }
-
+  /**
+   * TODO(rz): This method should be somewhere else...
+   */
   fun <T> awaitCompletion(saga: Saga, callback: (Saga) -> T?): T? {
-    return get(saga.name, saga.id).let(callback)
+    return get(saga.name, saga.id)
+      .also { refreshed ->
+        // If the saga isn't complete, find the next event that needs to be applied and re-publish it.
+        if (!refreshed.isComplete()) {
+          val nextEvent = refreshed.getEvents().first { it.metadata.sequence + 1 == refreshed.getSequence() }
+
+          log.info("Saga has already partially applied: Resuming (${saga.name}/${saga.id}), " +
+            "resuming from sequence ${nextEvent.metadata.sequence}")
+
+          // TODO(rz): Assuming the event publisher is synchronous right now
+          val eventPublisher = applicationContext.getBean(EventPublisher::class.java)
+          eventPublisher.publish(nextEvent)
+        }
+      }
+      .let(callback)
   }
 
   private fun getCompletionHandler(saga: Saga): SagaCompletionHandler<*>? =
@@ -278,7 +279,7 @@ class SagaService(
         }
       }
 
-  private enum class EventApplyState {
+  private enum class ApplyState {
     OUT_OF_ORDER,
     APPLIED,
     FAILED,

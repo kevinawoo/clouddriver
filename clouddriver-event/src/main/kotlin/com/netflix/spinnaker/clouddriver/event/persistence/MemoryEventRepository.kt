@@ -28,6 +28,7 @@ import org.springframework.scheduling.annotation.Scheduled
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.max
 
 /**
  * An in-memory only [EventRepository]. This implementation should only be used for testing.
@@ -80,8 +81,6 @@ class MemoryEventRepository(
       "[${events.joinToString(",") { it.javaClass.simpleName }}]")
 
     events.forEach { eventPublisher.publish(it) }
-
-    cleanup()
   }
 
   override fun list(aggregateType: String, aggregateId: String): List<SpinEvent> {
@@ -149,7 +148,7 @@ class MemoryEventRepository(
             entry.value.map { Pair(entry.key, it) }
           }
           .sortedBy { it.second.metadata.timestamp }
-          .subList(0, Math.max(events.size - maxCount, 0))
+          .subList(0, max(events.size - maxCount, 0))
           .forEach {
             log.trace("Cleaning up ${it.first}")
             events.remove(it.first)

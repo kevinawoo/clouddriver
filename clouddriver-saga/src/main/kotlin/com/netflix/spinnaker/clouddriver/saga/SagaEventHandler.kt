@@ -15,9 +15,21 @@
  */
 package com.netflix.spinnaker.clouddriver.saga
 
+import com.google.common.annotations.Beta
 import com.netflix.spinnaker.clouddriver.saga.models.Saga
 
 interface SagaEventHandler<T : SagaEvent> {
   fun apply(event: T, saga: Saga): List<SagaEvent>
   fun compensate(event: T, saga: Saga) {}
 }
+
+/**
+ * TODO(rz): Thinking about changing to this interface instead. Only allow emitting a single event instead to make
+ * things a little simpler on logic.
+ */
+@Beta
+private interface SagaEventHandler2<A : SagaEvent, B : SagaEvent, C : SagaRollbackEvent> {
+  fun apply(event: A, saga: Saga): B
+  fun rollback(event: B, saga: Saga): C
+}
+private abstract class SagaRollbackEvent(sagaName: String, sagaId: String) : SagaEvent(sagaName, sagaId)

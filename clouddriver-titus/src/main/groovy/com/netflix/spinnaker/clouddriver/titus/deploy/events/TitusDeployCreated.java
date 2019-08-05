@@ -15,9 +15,13 @@
  */
 package com.netflix.spinnaker.clouddriver.titus.deploy.events;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.google.common.hash.Hashing;
 import com.netflix.spinnaker.clouddriver.saga.SagaEvent;
+import com.netflix.spinnaker.clouddriver.titus.TitusException;
 import com.netflix.spinnaker.clouddriver.titus.deploy.description.TitusDeployDescription;
-import com.netflix.spinnaker.clouddriver.util.Checksum;
 import java.util.List;
 import javax.annotation.Nonnull;
 import lombok.Getter;
@@ -25,6 +29,13 @@ import org.jetbrains.annotations.NotNull;
 
 @Getter
 public class TitusDeployCreated extends SagaEvent {
+
+  private static final ObjectMapper CHECKSUM_MAPPER =
+      new ObjectMapper()
+          .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
+          .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
+          .disable(SerializationFeature.INDENT_OUTPUT);
+
   @Nonnull private final TitusDeployDescription description;
   @Nonnull private final List priorOutputs;
   @Nonnull private final String inputChecksum;
@@ -37,6 +48,16 @@ public class TitusDeployCreated extends SagaEvent {
     super(sagaName, sagaId);
     this.description = description;
     this.priorOutputs = priorOutputs;
-    this.inputChecksum = Checksum.md5(description);
+    this.inputChecksum = checksum(description);
+  }
+
+  private static String checksum(TitusDeployDescription description) {
+    try {
+      return Hashing.murmur3_32()
+          .hashBytes(CHECKSUM_MAPPER.writeValueAsBytes(description))
+          .toString();
+    } catch (JsonProcessingException e) {
+      throw new TitusException("Failed creating checksum for TitusDeployDescription", e);
+    }
   }
 }

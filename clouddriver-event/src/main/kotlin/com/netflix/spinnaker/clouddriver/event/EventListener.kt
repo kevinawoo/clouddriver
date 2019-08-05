@@ -13,22 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.netflix.spinnaker.clouddriver.util
+package com.netflix.spinnaker.clouddriver.event
 
-import com.netflix.spinnaker.kork.exceptions.SystemException
-
-class Either<A, B>(
-  val a: A?,
-  val b: B?
-) {
-  init {
-    if (a == null && b == null) {
-      throw IllegalArgumentsException()
-    }
-    if (a != null && b != null) {
-      throw IllegalArgumentsException()
-    }
-  }
-
-  private class IllegalArgumentsException : SystemException("Only one type of Either<A, B> must be set")
+/**
+ * Interface for subscribing to Spinnaker events.
+ *
+ * An implementation must be responsible for filtering out the events that it doesn't care about.
+ */
+interface EventListener {
+  fun onEvent(event: SpinEvent)
 }

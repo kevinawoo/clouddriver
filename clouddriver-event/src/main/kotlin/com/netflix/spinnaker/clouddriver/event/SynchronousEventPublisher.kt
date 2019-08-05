@@ -19,6 +19,9 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationContext
 import org.springframework.context.ApplicationContextAware
 
+/**
+ * Publishes events on the current thread to all subscribed listeners synchronously.
+ */
 class SynchronousEventPublisher : EventPublisher, ApplicationContextAware {
 
   private val log by lazy { LoggerFactory.getLogger(javaClass) }
@@ -33,8 +36,7 @@ class SynchronousEventPublisher : EventPublisher, ApplicationContextAware {
         try {
           it.onEvent(event)
         } catch (e: Exception) {
-          // TODO(rz): Feels like we should try escaping early here
-          log.error("EventListener generated an error", e)
+          log.error("EventListener '${it.javaClass.simpleName}' generated an error while handling event: ${event.javaClass.simpleName}", e)
         }
       }
   }

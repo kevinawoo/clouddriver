@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.netflix.spinnaker.clouddriver.event
+package com.netflix.spinnaker.clouddriver.saga
 
 import com.netflix.spectator.api.NoopRegistry
 import com.netflix.spectator.api.Registry
-import com.netflix.spinnaker.clouddriver.event.config.EventSourceAutoConfiguration
-import com.netflix.spinnaker.clouddriver.event.persistence.MemoryEventRepository
+import com.netflix.spinnaker.clouddriver.saga.config.SagaAutoConfiguration
+import com.netflix.spinnaker.clouddriver.saga.persistence.SagaRepository
 import dev.minutest.junit.JUnit5Minutests
 import dev.minutest.rootContext
 import org.springframework.boot.autoconfigure.AutoConfigurations
@@ -27,25 +27,26 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import strikt.api.expect
-import strikt.api.expectThat
 import strikt.assertions.isA
+import strikt.assertions.isNotNull
 
-class EventSourceSystemTest : JUnit5Minutests {
+class SagaSystemTest : JUnit5Minutests {
 
   fun tests() = rootContext<ApplicationContextRunner> {
     fixture {
       ApplicationContextRunner()
-      .withConfiguration(AutoConfigurations.of(
-        EventSourceAutoConfiguration::class.java
-      ))
+        .withConfiguration(AutoConfigurations.of(
+          SagaAutoConfiguration::class.java
+        ))
     }
 
     test("supports no config") {
-      withUserConfiguration(EventSourceAutoConfiguration::class.java, DependencyConfiguration::class.java)
+      withUserConfiguration(SagaAutoConfiguration::class.java, DependencyConfiguration::class.java)
         .run { ctx: AssertableApplicationContext ->
-          expectThat(ctx.getBean("eventRepository")).isA<MemoryEventRepository>()
           expect {
-            that(ctx.getBean("eventRepository")).describedAs("eventRepository").isA<MemoryEventRepository>()
+            that(ctx.getBean("sagaService")).isNotNull()
+            that(ctx.getBean("sagaEventHandlerProvider")).isA<SagaEventHandlerProvider>()
+            that(ctx.getBean("sagaRepository")).isA<SagaRepository>()
           }
         }
     }

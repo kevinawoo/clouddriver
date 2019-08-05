@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,7 +23,7 @@ import java.time.Instant
  * @param sequence Auto-incrementing number for event ordering
  * @param originatingVersion The aggregate version that originated this event
  * @param timestamp The time at which the event was created
- * @param serviceVersion The version of clouddriver that created the event
+ * @param serviceVersion The version of the service (clouddriver) that created the event
  * @param provenance Where the event was generated and by what
  */
 data class EventMetadata(
